@@ -703,8 +703,13 @@ function processGameCommand(socket, commandLine){
 				}
 			}
 			if(foundIndex !== -1){
-				socket.user_profile.playerEntity.weapon = socket.user_profile.playerEntity.items[foundIndex];
-				gameMsg(socket, "You equipped " + commands[1]);
+				if(socket.user_profile.playerEntity.items[foundIndex].dmg > 0) {
+					socket.user_profile.playerEntity.weapon = socket.user_profile.playerEntity.items[foundIndex];
+					gameMsg(socket, "You equipped " + commands[1]);
+				}
+				else{
+					gameMsg(socket, commands[1] + " is not a weapon.");
+				}
 			}
 			else{
 				gameMsg(socket, fonts.warning.output("You don't have " + commands[1]));
