@@ -1,0 +1,89 @@
+---
+  cells: 
+    - 
+      cell: 1
+      description: |
+       From the moment you set foot in here, you realized this must a shelter. 
+       Somehow you just feel safe staying in this place.
+       From the windows you see a trail leading into the woods.
+      items: 
+        - "antedote(2)"
+        - "baseball_bat(1)"
+        - "bandage(5)"
+        - "pistol(1)"
+    - 
+      cell: 2
+      description: |
+       You see a hollowed out human body lying on the ground.
+       Your instinct tells you something went terribly wrong.
+       Sitting beside that is a wounded soldier, who looks like
+       he can die at any moment.
+      items: 
+        - "knife(1)"
+      enemies:
+        - "wounded_soldier(1)"
+    - 
+      cell: 3
+      description: |
+       At first you wanted to say hi but looking again you knew 
+       something is off with this dude, that his snake-like brown-grey 
+       intestines dragged in the dirt as he staggered toward you using 
+       only its ears and nose for guidance.
+      alt_description: "There is a rotten corpse on the ground, with its head chopped off."
+      enemies: 
+        - "zombie(2)"
+    - 
+      cell: 4
+      description: |
+       You are staring into a huge space of emptiness, 
+       as if Creator himself has left unfinished work behind.
+      enemies: 
+        - "zombie_dog(2)"
+      triggers: 
+        - "exit"
+  enemies: 
+    zombie: 
+      hp: 20
+      dmg: 3
+      def: 1
+      attack_msg: "lunges toward you and bites on your shoulder"
+      aggro: 1
+      drops: 
+        - "gold(2)"
+        - "bones(2)"
+    zombie_dog: 
+      hp: 10
+      dmg: 5
+      def: 2
+      attack_msg: "jumps on you and bites on your neck"
+      aggro: 1
+      drops: 
+        - "gold(4)"
+        - "bones(1)"
+    wounded_soldier:
+      hp: 5
+      dmg: 2
+      def: 0
+      attack_msg: "struggles to defend himself with a knife"
+      aggro: 0
+      drops:
+        - "knife(1)"
+        - "gold(5)"
+  items: 
+    gold: 
+      description: "It spells M-O-N-E-Y"
+    bones: 
+      description: "You wonder why you picked this up in the first place"
+    antedote: 
+      description: "Your hp can drop to zero, so better use it while you can. "
+    baseball_bat: 
+      description: "This weapon seems particularly effective gainst zombies"
+      dmg: 3
+    bandage: 
+      description: "This only stops bleeding"
+    knife: 
+      description: "Who said a chef's knife cannot kill?"
+      dmg: 2
+    pistol:
+      description: "At this dire moment you don't mind shooting Glock at all"
+      dmg: 5
