@@ -18,10 +18,10 @@
        Your instinct tells you something went terribly wrong.
        Sitting beside that is a wounded soldier, who looks like
        he can die at any moment.
-      items: 
-        - "knife(1)"
       enemies:
         - "wounded_soldier(1)"
+      items:
+        - "pistol(2)"
     - 
       cell: 3
       description: |

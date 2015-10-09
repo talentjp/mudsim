@@ -8,6 +8,7 @@ var rooms = {};
 var ESCAPE = String.fromCharCode(27);
 var WORLD_INTERVAL = 200;
 var cells = [];
+var itemMap = null;
 
 var UserStateEnum = Object.freeze({
 	"LOGIN" : 0,
@@ -20,12 +21,15 @@ var PlayerStateEnum = Object.freeze({
 	"IDLE" : 0,
 	"ATTACK" : 1,
 	"MOVED" : 2,
-	"ESCAPING" : 3
+	"ESCAPING" : 3,
+	"DEATH" : 4
 });
 
 var EnemyStateEnum = Object.freeze({
 	"IDLE" : 0,
-	"ATTACK" : 1
+	"ATTACK" : 1,
+	"DYING" : 2,
+	"DEATH" : 3
 });
 
 function CCellEntity(num){
@@ -69,6 +73,13 @@ function CPlayerEntity(socket){
 	this.prev_state = PlayerStateEnum.IDLE;
 	this.attacking = null;
 	this.update = function(){
+		if(this.state !== PlayerStateEnum.DEATH){
+			if(this.hp <= 0){
+				changeState(this, PlayerStateEnum.DEATH);
+				gameMsg(this.parentSocket, "You died...");
+			}
+		}
+
 		if(this.state === PlayerStateEnum.IDLE){
 			var hostileEnemies = findHostileEnemies(this);
 			if(hostileEnemies.length !== 0){
@@ -147,7 +158,6 @@ function CEnemyEntity(name){
 	this.state = EnemyStateEnum.IDLE;
 	this.prev_state = EnemyStateEnum.IDLE;
 	this.attackingNamed = null;
-	this.isDead = false;
 	this.aggro = false;
 	this.update = function(){
 		if(this.state === EnemyStateEnum.IDLE){
@@ -164,10 +174,12 @@ function CEnemyEntity(name){
 					for(var i in this.cell.playerNames){
 						var playerFound = findPlayer(this.cell.playerNames[i]);
 						if(playerFound != null){
-							this.attackingNamed = this.cell.playerNames[i];
-							changeState(this,  EnemyStateEnum.ATTACK);
-							gameMsg(playerFound.parentSocket, fonts.enemy.output(this.name) + " starts attacking YOU!");
-							break;
+							if(playerFound.state !== PlayerStateEnum.DEATH) {
+								this.attackingNamed = this.cell.playerNames[i];
+								changeState(this, EnemyStateEnum.ATTACK);
+								gameMsg(playerFound.parentSocket, fonts.enemy.output(this.name) + " starts attacking YOU!");
+								break;
+							}
 						}					
 					}
 				}
@@ -181,7 +193,9 @@ function CEnemyEntity(name){
 					if (i != -1) {
 						var playerFound = findPlayer(this.attackingNamed);
 						if (playerFound !== null) {
-							resolveEnemyAttack(this, playerFound);
+							if(playerFound.state !== PlayerStateEnum.DEATH) {
+								resolveEnemyAttack(this, playerFound);
+							}
 						}
 						else{
 							changeState(this, EnemyStateEnum.IDLE);
@@ -199,34 +213,84 @@ function CEnemyEntity(name){
 				this.timeElapsed = 0;
 			}
 		}
+		else if(this.state === EnemyStateEnum.DYING){
+			for(var i in this.drops) {
+				var newItem = new CItemEntity(this.drops[i]);
+				newItem.description = itemMap[newItem.name].description;
+				if(itemMap[newItem.name].hasOwnProperty("dmg")){
+					newItem.dmg = itemMap[newItem.name].dmg;
+				}
+				addItem(this.cell, newItem);
+			}
+			this.state = EnemyStateEnum.DEATH;
+		}
 	}
+}
+
+function addItem(cell, item){
+	var duplicate = false;
+	for(var i in cell.items) {
+		if(cell.items[i].name === item.name){
+			duplicate = true;
+			cell.items[i].quantity += item.quantity;
+			break;
+		}
+	}
+	if(!duplicate){
+		cell.items.push(item);
+	}
+}
+
+function removeItem(cell, item){
+	cell.items = cell.items.filter(function(item_iter){return item_iter !== item});
 }
 
 function resolveEnemyAttack(enemy, player){
-	player.hp -= enemy.dmg;
-	gameMsg(player.parentSocket, fonts.enemy.output(enemy.name) + " " + enemy.attack_msg + ", causing " + fonts.damage.output(enemy.dmg.toString()) + " dmg (Your HP:" + player.hp.toString() + ")");
+	if(player.state !== PlayerStateEnum.DEATH) {
+		player.hp -= enemy.dmg;
+		gameMsg(player.parentSocket, fonts.enemy.output(enemy.name) + " " + enemy.attack_msg + ", causing " + fonts.damage.output(enemy.dmg.toString()) + " dmg (Your HP:" + player.hp.toString() + ")");
+		if(player.hp <= 0){
+			gameMsg(player.parentSocket, fonts.enemy.output(enemy.name) + " killed you.");
+			enemy.attackingNamed = null;
+			player.attacking = null;
+			changeState(enemy, EnemyStateEnum.IDLE);
+		}
+	}
 }
 
 function resolvePlayerAttack(player, enemy){
-	var dmg = 0;
-	if(player.weapon === null){
-		gameMsg(player.parentSocket, "You tried punching the " + enemy.name + " with your fist, but it hardly registered")
-		dmg = 1;
+	if(enemy.state !== EnemyStateEnum.DEATH) {
+		var dmg = 0;
+		var msg = "";
+		if (player.weapon === null) {
+			msg += "You barely scratched the " + enemy.name + " with your punch";
+			dmg = 1;
+		}
+		else {
+			dmg = player.weapon.dmg - enemy.def;
+			if (player.weapon.name === "baseball_bat") {
+				msg += "You swang the baseball bat at " + fonts.enemy.output(enemy.name);
+			}
+			else if (player.weapon.name === "knife") {
+				msg += "You stabbed " + fonts.enemy.output(enemy.name) + " with your knife";
+			}
+			else if (player.weapon.name === "pistol") {
+				msg += "You fire the pistol at " + fonts.enemy.output(enemy.name) + ", and the bullet landed in the target";
+			}
+		}
+		enemy.hp -= dmg;
+		if (enemy.hp <= 0) {
+			msg += ", and you killed " + enemy.name;
+			player.attacking = null;
+			enemy.attackingNamed = null;
+			changeState(player, PlayerStateEnum.IDLE);
+			enemy.state = EnemyStateEnum.DYING;
+		}
+		else {
+			msg += ", inflicting " + fonts.damage.output(dmg.toString()) + " dmg.(" + enemy.name + " HP:" + enemy.hp + ")";
+		}
+		gameMsg(player.parentSocket, msg);
 	}
-	else {
-		dmg = player.weapon.dmg - enemy.def;
-		if(player.weapon.name === "baseball_bat"){
-			gameMsg(player.parentSocket, "You swang the baseball bat at " + fonts.enemy.output(enemy.name))
-		}
-		else if(player.weapon.name === "knife"){
-			gameMsg(player.parentSocket, "You stabbed " + fonts.enemy.output(enemy.name) + " with your knife")
-		}
-		else if(player.weapon.name === "pistol"){
-			gameMsg(player.parentSocket, "You fire the pistol at " + fonts.enemy.output(enemy.name) + ", and the bullet landed in the target")
-		}
-	}
-	enemy.hp -= dmg;
-	gameMsg(player.parentSocket, ", inflicting " + fonts.damage.output(dmg.toString()) + " dmg.");
 }
 
 function enemyParser(text, enemyDict){
@@ -241,7 +305,13 @@ function enemyParser(text, enemyDict){
 	}
 	var arrayEnemies = [];
 	for(var i = 0; i < count; i++){
-		var newEnemy = new CEnemyEntity(name);
+		var newEnemy;
+		if(i > 0) {
+			newEnemy = new CEnemyEntity(name + "#" + count);
+		}
+		else{
+			newEnemy = new CEnemyEntity(name);
+		}
 		newEnemy.hp = enemyDict[name].hp;
 		newEnemy.dmg = enemyDict[name].dmg;
 		newEnemy.def = enemyDict[name].def;
@@ -261,6 +331,7 @@ function CItemEntity(name){
 	this.description = "";
 	this.quantity = 1;
 	this.name = name;
+	this.dmg = 0;
 	var searchIndex = name.search(/\(.+\)/);
 	if(searchIndex != -1){
 		var left = name.search(/\(/);
@@ -375,6 +446,7 @@ function CGameWorld(){
 		}
 
 		this.metamap = yaml.safeLoad(fs.readFileSync('metamap.yml', 'utf8'));
+		itemMap = this.metamap.items;
 		for(var i in this.metamap.cells) {
 			var newCell = new CCellEntity(this.metamap.cells[i].cell);
 			newCell.description = this.metamap.cells[i].description;
@@ -383,6 +455,9 @@ function CGameWorld(){
 				for(var j in this.metamap.cells[i].items){
 					var newItem = new CItemEntity(this.metamap.cells[i].items[j]);
 					newItem.description = this.metamap.items[newItem.name].description;
+					if(this.metamap.items[newItem.name].hasOwnProperty("dmg")){
+						newItem.dmg = this.metamap.items[newItem.name].dmg;
+					}
 					newCell.items.push(newItem);
 				}
 			}
@@ -553,24 +628,99 @@ function processGameCommand(socket, commandLine){
 		socket.user_profile.state = UserStateEnum.LOBBY;
 	}
 	else if(command === "attack"){
-		if(commands.length === 2){
+		if(commands.length > 1){
+			var found = false;
 			for(var i in socket.user_profile.playerEntity.cell.enemies){
 				if(socket.user_profile.playerEntity.cell.enemies[i].name === commands[1]){
-					socket.user_profile.playerEntity.attacking = socket.user_profile.playerEntity.cell.enemies[i];
+					if(socket.user_profile.playerEntity.cell.enemies[i].state === EnemyStateEnum.DEATH){
+						gameMsg(socket, "Have mercy, it's already dead.");
+					}
+					else {
+						socket.user_profile.playerEntity.attacking = socket.user_profile.playerEntity.cell.enemies[i];
+						socket.user_profile.playerEntity.state = PlayerStateEnum.ATTACK;
+						gameMsg(socket, "You start attacking " + commands[1]);
+					}
+					found = true;
 					break;
 				}
 			}
+			if(!found){
+				gameMsg(socket, fonts.warning.output(commands[1] + " does not exist!"));
+			}
+		}
+		else{
+			gameMsg(socket, fonts.warning.output("What are you trying to attack?"));
 		}
 	}
 	else if(command === "look"){
 		for(var i in socket.user_profile.playerEntity.cell.enemies){
-			gameMsg(socket, fonts.highlight.output(socket.user_profile.playerEntity.cell.enemies[i].name));
+			gameMsg(socket, "Looking around, you see:");
+			if(socket.user_profile.playerEntity.cell.enemies[i].state === EnemyStateEnum.DEATH){
+				gameMsg(socket, fonts.highlight.output(socket.user_profile.playerEntity.cell.enemies[i].name) + "(dead)");
+			}
+			else {
+				gameMsg(socket, fonts.highlight.output(socket.user_profile.playerEntity.cell.enemies[i].name));
+			}
+		}
+		gameMsg(socket, "Things you can pick up:");
+		for(var i in socket.user_profile.playerEntity.cell.items){
+			gameMsg(socket, fonts.highlight.output(socket.user_profile.playerEntity.cell.items[i].name + "(" + socket.user_profile.playerEntity.cell.items[i].quantity +")"));
+		}
+	}
+	else if(command === "take"){
+		if(commands.length > 1){
+			var found = false;
+			for(var i in socket.user_profile.playerEntity.cell.items){
+				if(socket.user_profile.playerEntity.cell.items[i].name === commands[1]){
+					addItem(socket.user_profile.playerEntity, socket.user_profile.playerEntity.cell.items[i]);
+					removeItem(socket.user_profile.playerEntity.cell, socket.user_profile.playerEntity.cell.items[i]);
+					gameMsg(socket, "You picked up " + commands[1]);
+					found = true;
+					break;
+				}
+			}
+			if(!found){
+				gameMsg(socket, fonts.warning.output(commands[1] + " does not exist!"));
+			}
+		}
+		else{
+			gameMsg(socket, fonts.warning.output("What are you going to take?"));
+		}
+	}
+	else if(command === "inventory"){
+		gameMsg(socket, "You are carrying these:");
+		for(var i in socket.user_profile.playerEntity.items){
+			gameMsg(socket, socket.user_profile.playerEntity.items[i].name + "(" + socket.user_profile.playerEntity.items[i].quantity +")");
+		}
+	}
+	else if(command === "equip"){
+		if(commands.length > 1){
+			var foundIndex = -1;
+			for(var i in socket.user_profile.playerEntity.items){
+				if(socket.user_profile.playerEntity.items[i].name === commands[1]){
+					foundIndex = i;
+					break;
+				}
+			}
+			if(foundIndex !== -1){
+				socket.user_profile.playerEntity.weapon = socket.user_profile.playerEntity.items[foundIndex];
+				gameMsg(socket, "You equipped " + commands[1]);
+			}
+			else{
+				gameMsg(socket, fonts.warning.output("You don't have " + commands[1]));
+			}
+		}
+		else{
+			gameMsg(socket, fonts.warning.output("What are you going to equip?"));
 		}
 	}
 	else if(command.match(/^e$|^east$/i)){
 		if(socket.user_profile.playerEntity.cell.e_cell != null){
 			if(socket.user_profile.playerEntity.state === PlayerStateEnum.ATTACK){
 				escape(socket.user_profile.playerEntity, findCell(socket.user_profile.playerEntity.cell.e_cell));
+			}
+			else if(socket.user_profile.playerEntity.state === PlayerStateEnum.DEATH){
+				gameMsg(socket, "You can't move when you are dead.")
 			}
 			else {
 				moveToCell(socket.user_profile.playerEntity, findCell(socket.user_profile.playerEntity.cell.e_cell));
@@ -585,6 +735,9 @@ function processGameCommand(socket, commandLine){
 			if(socket.user_profile.playerEntity.state === PlayerStateEnum.ATTACK){
 				escape(socket.user_profile.playerEntity, findCell(socket.user_profile.playerEntity.cell.w_cell));
 			}
+			else if(socket.user_profile.playerEntity.state === PlayerStateEnum.DEATH){
+				gameMsg(socket, "You can't move when you are dead.")
+			}
 			else {
 				moveToCell(socket.user_profile.playerEntity, findCell(socket.user_profile.playerEntity.cell.w_cell));
 			}
@@ -598,6 +751,9 @@ function processGameCommand(socket, commandLine){
 			if(socket.user_profile.playerEntity.state === PlayerStateEnum.ATTACK){
 				escape(socket.user_profile.playerEntity, findCell(socket.user_profile.playerEntity.cell.s_cell));
 			}
+			else if(socket.user_profile.playerEntity.state === PlayerStateEnum.DEATH){
+				gameMsg(socket, "You can't move when you are dead.")
+			}
 			else {
 				moveToCell(socket.user_profile.playerEntity, findCell(socket.user_profile.playerEntity.cell.s_cell));
 			}
@@ -610,6 +766,9 @@ function processGameCommand(socket, commandLine){
 		if(socket.user_profile.playerEntity.cell.n_cell != null){
 			if(socket.user_profile.playerEntity.state === PlayerStateEnum.ATTACK){
 				escape(socket.user_profile.playerEntity, findCell(socket.user_profile.playerEntity.cell.n_cell));
+			}
+			else if(socket.user_profile.playerEntity.state === PlayerStateEnum.DEATH){
+				gameMsg(socket, "You can't move when you are dead.")
 			}
 			else {
 				moveToCell(socket.user_profile.playerEntity, findCell(socket.user_profile.playerEntity.cell.n_cell));
