@@ -778,6 +778,9 @@ function processGameCommand(socket, commandLine){
 			gameMsg(socket, "You cannot move there");
 		}
 	}
+	else if(command === "help"){
+		gameMsg(socket, "Available commands:" + fonts.highlight.output("w,n,e,s,equip,look,inventory,take,attack,quit"));
+	}
 	else{
 		sendMsg(socket, fonts.warning.output("Illegal command"));
 	}

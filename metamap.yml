@@ -8,9 +8,8 @@
        From the windows you see a trail leading into the woods.
       items: 
         - "antedote(2)"
-        - "baseball_bat(1)"
+        - "knife(1)"
         - "bandage(5)"
-        - "pistol(1)"
     - 
       cell: 2
       description: |
@@ -20,8 +19,6 @@
        he can die at any moment.
       enemies:
         - "wounded_soldier(1)"
-      items:
-        - "pistol(2)"
     - 
       cell: 3
       description: |
@@ -39,6 +36,8 @@
        as if Creator himself has left unfinished work behind.
       enemies: 
         - "zombie_dog(2)"
+      items:
+        - "baseball_bat(2)"
       triggers: 
         - "exit"
   enemies: 
@@ -62,12 +61,12 @@
         - "bones(1)"
     wounded_soldier:
       hp: 5
-      dmg: 2
+      dmg: 4
       def: 0
-      attack_msg: "struggles to defend himself with a knife"
+      attack_msg: "struggles to defend himself by shooting your leg"
       aggro: 0
       drops:
-        - "knife(1)"
+        - "pistol(1)"
         - "gold(5)"
   items: 
     gold: 
